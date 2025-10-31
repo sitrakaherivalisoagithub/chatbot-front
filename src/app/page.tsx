@@ -60,49 +60,54 @@ export default function Home() {
       }
 
       // -- Début de la nouvelle logique d'aiguillage --
-      
+
       const contentType = response.headers.get('Content-Type');
-      const botMessages: Message[] = []; // Préparer un tableau pour 1 ou 2 messages
+      const botMessages: Message[] = []; // Préparer un tableau pour les messages du bot
 
       if (contentType && contentType.includes('application/json')) {
-        // Cas 1: La réponse est du JSON (texte seul)
         const data = await response.json();
-        let message: string | null = null;
-        console.log(data)
+        console.log(data);
 
-        // Gérer les différentes structures JSON possibles
-        if (Array.isArray(data) && data.length > 0 && data[0].output && typeof data[0].output.response === 'string') {
-          message = data[0].output.response;
-        }
-        else {
-          message = 'Pas de réponse'
-        }
+        if (Array.isArray(data) && data.length > 0) {
+          const responseItem = data[0];
 
-        if (message) {
-          const htmlContent = message
-            .replace(/\n/g, '<br />')
-            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-          botMessages.push({ type: 'html', content: htmlContent, sender: 'bot' });
-        }
+          // Cas 2: Gérer la réponse avec image (base64) et texte
+          // Vérifier si l'image base64 existe et n'est pas vide (seuil arbitraire pour éviter les chaînes vides)
+          if (responseItem.image_base64 && responseItem.image_base64.length > 50) {
+            botMessages.push({ type: 'image', content: responseItem.image_base64, sender: 'bot' });
+          }
 
-      } else if (contentType && contentType.startsWith('image/')) {
-        // Cas 2: La réponse est une image binaire
-        const imageBlob = await response.blob();
-        if (imageBlob.size > 0) {
-          const imageUrl = URL.createObjectURL(imageBlob);
-          botMessages.push({ type: 'image', content: imageUrl, sender: 'bot' });
-        } else {
-          console.error("Le serveur a renvoyé une image vide.");
-          botMessages.push({ type: 'text', content: 'Erreur: Le serveur a renvoyé une image vide.', sender: 'bot' });
+          // Gérer la partie texte (qui peut exister dans les deux cas)
+          let messageText: string | null = null;
+          if (typeof responseItem.output === 'string') {
+            // Cas 2: le texte est directement dans 'output'
+            messageText = responseItem.output;
+          } else if (responseItem.output && typeof responseItem.output.response === 'string') {
+            // Cas 1: le texte est dans 'output.response'
+            messageText = responseItem.output.response;
+          }
+
+          if (messageText) {
+            const htmlContent = messageText
+              .replace(/\n/g, '<br />')
+              .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            botMessages.push({ type: 'html', content: htmlContent, sender: 'bot' });
+          }
         }
         
+        // Si, après toutes les vérifications, aucun message n'a été ajouté
+        if (botMessages.length === 0) {
+          console.error("La structure JSON de la réponse est inattendue ou vide.", data);
+          botMessages.push({ type: 'text', content: 'Erreur: Réponse inattendue du serveur.', sender: 'bot' });
+        }
+
       } else {
-        // Fallback pour les réponses inattendues
+        // Fallback pour les réponses qui ne sont pas du JSON
         const text = await response.text();
-        console.error("Réponse inattendue:", text);
+        console.error("Réponse inattendue (non-JSON):", text);
         botMessages.push({ type: 'text', content: 'Erreur: Réponse inattendue du serveur.', sender: 'bot' });
       }
-      
+
       // -- Fin de la nouvelle logique --
 
       // Ajouter le(s) message(s) du bot à l'historique
@@ -189,7 +194,9 @@ export default function Home() {
                 className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`rounded-lg px-4 py-2 max-w-lg ${
+                  className={`max-w-lg rounded-lg overflow-hidden ${
+                    msg.type === 'image' ? '' : 'px-4 py-2'
+                  } ${
                     msg.sender === 'user'
                       ? 'bg-blue-500 text-white'
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
@@ -199,7 +206,7 @@ export default function Home() {
                   {msg.type === 'html' ? (
                     <div dangerouslySetInnerHTML={{ __html: msg.content }} />
                   ) : msg.type === 'image' ? (
-                    <img src={msg.content} alt="Visualisation" className="rounded-lg max-w-full h-auto" />
+                    <img src={msg.content} alt="Visualisation" className="block w-full h-auto" />
                   ) : (
                     <p>{msg.content}</p>
                   )}
