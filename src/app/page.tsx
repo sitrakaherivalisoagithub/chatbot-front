@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
+// MODIFICATION 1: Ajouter 'image' au type
 type Message = {
-  type: string;
+  type: 'text' | 'html' | 'image'; // Ajout de 'image'
   content: string;
   sender: 'user' | 'bot';
 };
@@ -25,6 +26,7 @@ export default function Home() {
     handleNewChat();
   }, []);
 
+  // MODIFICATION 2: Refonte complète de handleSend
   const handleSend = async () => {
     if (input.trim() === '' || !activeConversationId) return;
 
@@ -57,13 +59,57 @@ export default function Home() {
         throw new Error('Network response was not ok');
       }
 
-      const data = await response.json();
-      const botMessage: Message = { type: 'html', content: data[0].output.html, sender: 'bot' };
+      // -- Début de la nouvelle logique d'aiguillage --
       
+      const contentType = response.headers.get('Content-Type');
+      const botMessages: Message[] = []; // Préparer un tableau pour 1 ou 2 messages
+
+      if (contentType && contentType.includes('application/json')) {
+        // Cas 1: La réponse est du JSON (texte seul)
+        const data = await response.json();
+        let message: string | null = null;
+        console.log(data)
+
+        // Gérer les différentes structures JSON possibles
+        if (Array.isArray(data) && data.length > 0 && data[0].output && typeof data[0].output.response === 'string') {
+          message = data[0].output.response;
+        }
+        else {
+          message = 'Pas de réponse'
+        }
+
+        if (message) {
+          const htmlContent = message
+            .replace(/\n/g, '<br />')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+          botMessages.push({ type: 'html', content: htmlContent, sender: 'bot' });
+        }
+
+      } else if (contentType && contentType.startsWith('image/')) {
+        // Cas 2: La réponse est une image binaire
+        const imageBlob = await response.blob();
+        if (imageBlob.size > 0) {
+          const imageUrl = URL.createObjectURL(imageBlob);
+          botMessages.push({ type: 'image', content: imageUrl, sender: 'bot' });
+        } else {
+          console.error("Le serveur a renvoyé une image vide.");
+          botMessages.push({ type: 'text', content: 'Erreur: Le serveur a renvoyé une image vide.', sender: 'bot' });
+        }
+        
+      } else {
+        // Fallback pour les réponses inattendues
+        const text = await response.text();
+        console.error("Réponse inattendue:", text);
+        botMessages.push({ type: 'text', content: 'Erreur: Réponse inattendue du serveur.', sender: 'bot' });
+      }
+      
+      // -- Fin de la nouvelle logique --
+
+      // Ajouter le(s) message(s) du bot à l'historique
       setConversationHistory(prev =>
         prev.map(convo =>
           convo.id === activeConversationId
-            ? { ...convo, messages: [...convo.messages, botMessage] }
+            ? { ...convo, messages: [...convo.messages, ...botMessages] } // ...botMessages (spread)
             : convo
         )
       );
@@ -98,6 +144,7 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+      {/* ... (Partie Sidebar, aucun changement) ... */}
       <div className="w-64 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
         <div className="p-4">
           <button
@@ -131,6 +178,8 @@ export default function Home() {
           </ul>
         </div>
       </div>
+      
+      {/* ... (Partie Chat) ... */}
       <div className="flex flex-col flex-grow">
         <div className="flex-grow p-6 overflow-auto">
           <div className="flex flex-col gap-4">
@@ -146,8 +195,11 @@ export default function Home() {
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
                   }`}
                 >
+                  {/* MODIFICATION 3: Ajouter le rendu des images */}
                   {msg.type === 'html' ? (
                     <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+                  ) : msg.type === 'image' ? (
+                    <img src={msg.content} alt="Visualisation" className="rounded-lg max-w-full h-auto" />
                   ) : (
                     <p>{msg.content}</p>
                   )}
@@ -163,6 +215,7 @@ export default function Home() {
             )}
           </div>
         </div>
+        {/* ... (Partie Input, aucun changement) ... */}
         <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800">
           <div className="flex items-center gap-2">
             <textarea
