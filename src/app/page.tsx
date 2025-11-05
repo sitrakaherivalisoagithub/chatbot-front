@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import ImageMessage from './components/ImageMessage';
 
 // MODIFICATION 1: Ajouter 'image' au type
 type Message = {
@@ -206,7 +207,7 @@ export default function Home() {
                   {msg.type === 'html' ? (
                     <div dangerouslySetInnerHTML={{ __html: msg.content }} />
                   ) : msg.type === 'image' ? (
-                    <img src={msg.content} alt="Visualisation" className="block w-full h-auto" />
+                    <ImageMessage src={msg.content} />
                   ) : (
                     <p>{msg.content}</p>
                   )}
